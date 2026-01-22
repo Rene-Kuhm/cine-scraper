@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
+import csv
 import time
 import random
 from urllib.parse import urljoin, urlparse
@@ -28,25 +28,77 @@ class CineScraper:
         """Extraer información de una película desde un elemento HTML"""
         pelicula = {}
         
-        # Título (ejemplo genérico, ajustar según el sitio)
-        titulo_elem = pelicula_element.find('h2') or pelicula_element.find('h3') or pelicula_element.find('span', class_='title')
+        # Título - Selectores múltiples para diferentes sitios
+        titulo_elem = (
+            pelicula_element.find('h2') or 
+            pelicula_element.find('h3') or 
+            pelicula_element.find('span', class_='title') or
+            pelicula_element.find('h3', class_='title') or
+            pelicula_element.find('a', class_='title') or
+            pelicula_element.find('div', class_='Title') or
+            pelicula_element.find(['h2', 'h3', 'h1'], class_='title')
+        )
         pelicula['titulo'] = titulo_elem.get_text(strip=True) if titulo_elem else 'Sin título'
         
-        # Género
-        genero_elem = pelicula_element.find('span', class_='genre') or pelicula_element.find('div', class_='genero')
+        # Género - Selectores específicos para diferentes sitios
+        genero_elem = (
+            pelicula_element.find('span', class_='genre') or 
+            pelicula_element.find('div', class_='genero') or
+            pelicula_element.find('div', class_='Genre') or
+            pelicula_element.find('span', class_='genres') or
+            pelicula_element.find('p', class_='genre')
+        )
         pelicula['genero'] = genero_elem.get_text(strip=True) if genero_elem else 'No especificado'
         
         # Duración
-        duracion_elem = pelicula_element.find('span', class_='duration') or pelicula_element.find('div', class_='duracion')
+        duracion_elem = (
+            pelicula_element.find('span', class_='duration') or 
+            pelicula_element.find('div', class_='duracion') or
+            pelicula_element.find('span', class_='runtime') or
+            pelicula_element.find('time') or
+            pelicula_element.find('div', class_='Duration')
+        )
         pelicula['duracion'] = duracion_elem.get_text(strip=True) if duracion_elem else 'No especificada'
         
-        # Clasificación
-        clasificacion_elem = pelicula_element.find('span', class_='rating') or pelicula_element.find('div', class_='clasificacion')
+        # Clasificación/Rating
+        clasificacion_elem = (
+            pelicula_element.find('span', class_='rating') or 
+            pelicula_element.find('div', class_='clasificacion') or
+            pelicula_element.find('div', class_='user_score_chart') or
+            pelicula_element.find('span', class_='vote_average') or
+            pelicula_element.find('div', class_='Rating')
+        )
         pelicula['clasificacion'] = clasificacion_elem.get_text(strip=True) if clasificacion_elem else 'No especificada'
         
         # Sinopsis
-        sinopsis_elem = pelicula_element.find('p', class_='synopsis') or pelicula_element.find('div', class_='sinopsis')
+        sinopsis_elem = (
+            pelicula_element.find('p', class_='synopsis') or 
+            pelicula_element.find('div', class_='sinopsis') or
+            pelicula_element.find('p', class_='overview') or
+            pelicula_element.find('div', class_='overview') or
+            pelicula_element.find('div', class_='Description')
+        )
         pelicula['sinopsis'] = sinopsis_elem.get_text(strip=True) if sinopsis_elem else 'Sin sinopsis'
+        
+        # Enlace a página de detalle
+        link_elem = (
+            pelicula_element.find('a', href=True) or
+            pelicula_element.find('a', class_='image') or
+            pelicula_element.find('a', class_='title')
+        )
+        pelicula['link_detalle'] = link_elem['href'] if link_elem else 'No disponible'
+        
+        # Imagen
+        img_elem = pelicula_element.find('img')
+        pelicula['imagen'] = img_elem['src'] if img_elem and img_elem.get('src') else 'No disponible'
+        
+        # Año
+        year_elem = (
+            pelicula_element.find('span', class_='release_date') or
+            pelicula_element.find('div', class_='year') or
+            pelicula_element.find('span', class_='date')
+        )
+        pelicula['anio'] = year_elem.get_text(strip=True) if year_elem else 'No especificado'
         
         return pelicula
     
@@ -60,8 +112,19 @@ class CineScraper:
         
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Buscar contenedores de películas (ajustar según el sitio)
-        peliculas_elements = soup.find_all('div', class_='pelicula') or soup.find_all('article', class_='movie') or soup.find_all('div', class_='film')
+        # Buscar contenedores de películas - Selectores múltiples para diferentes sitios
+        peliculas_elements = (
+            soup.find_all('div', class_='pelicula') or 
+            soup.find_all('article', class_='movie') or 
+            soup.find_all('div', class_='film') or
+            soup.find_all('div', class_='card') or
+            soup.find_all('div', class_='item') or
+            soup.find_all('div', class_='movie-item') or
+            soup.find_all('li', class_='movie') or
+            soup.find_all('div', class_='post') or
+            soup.find_all('article') or
+            soup.find_all('div', class_='result')
+        )
         
         page_peliculas = []
         for element in peliculas_elements:
@@ -78,8 +141,15 @@ class CineScraper:
             print("No hay películas para guardar")
             return
         
-        df = pd.DataFrame(self.peliculas)
-        df.to_csv(filename, index=False, encoding='utf-8')
+        # Obtener los encabezados (keys) del primer diccionario
+        if self.peliculas:
+            fieldnames = self.peliculas[0].keys()
+            
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(self.peliculas)
+                
         print(f"Guardadas {len(self.peliculas)} películas en {filename}")
     
     def scrape_multiple_urls(self, urls):
@@ -93,12 +163,28 @@ class CineScraper:
         
         print(f"Total de películas scrapeadas: {len(self.peliculas)}")
 
-# URLs de ejemplo (ajustar según los sitios de cine reales)
+# URLs de sitios de streaming y torrents populares
 CINE_URLS = [
-    # Ejemplos genéricos - reemplazar con URLs reales
-    # 'https://www.cinepolis.com/cartelera',
-    # 'https://www.cinemex.com/cartelera',
-    # 'https://www.cinemark.cl/cartelera'
+    # The Movie Database (TMDB) - Popular movies
+    'https://www.themoviedb.org/movie',
+    
+    # Cuevana - Streaming (dominios pueden cambiar)
+    'https://znr.cuevana.pro/',
+    'https://cuevana3.site/',
+    'https://www.cuevana.to/',
+    
+    # PelisPlus - Alternativa streaming
+    'https://pelisplus.so/',
+    'https://pelisplus2.me/',
+    
+    # Series y películas alternativas
+    'https://www.pelis24.se/',
+    'https://repelisplus.so/',
+    
+    # Torrent sites (para magnet links)
+    'https://yts.mx/browse-movies',
+    'https://1337x.to/movies/',
+    'https://thepiratebay.org/browse/201',
 ]
 
 if __name__ == "__main__":
